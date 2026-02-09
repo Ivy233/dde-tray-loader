@@ -18,6 +18,9 @@
 #include <QMouseEvent>
 #include <QApplication>
 #include <QDBusInterface>
+#include <QDir>
+#include <QFileInfo>
+#include <QDirIterator>
 
 DWIDGET_USE_NAMESPACE
 DGUI_USE_NAMESPACE
@@ -172,7 +175,111 @@ void SoundView::refreshIcon()
         volumeString = "low";
 
     iconString = QString("audio-volume-%1-symbolic").arg(volumeString);
-    m_iconWidget->setIcon(QIcon::fromTheme(iconString));
+
+    // 获取图标对象
+    QIcon icon = QIcon::fromTheme(iconString);
+
+    // 获取当前主题信息
+    auto themeType = DGuiApplicationHelper::instance()->themeType();
+    QString themeTypeName = (themeType == DGuiApplicationHelper::LightType) ? "Light" : "Dark";
+
+    // 获取当前图标主题名称
+    QString currentIconTheme = QIcon::themeName();
+
+    // 获取设备像素比
+    qreal devicePixelRatio = qApp->devicePixelRatio();
+
+    // 尝试通过 QIcon 获取实际使用的图标文件路径
+    QString actualIconPath = "Not found";
+    if (!icon.isNull()) {
+        // 获取一个 pixmap 来触发图标加载
+        QPixmap pixmap = icon.pixmap(QSize(48, 48));
+
+        // 尝试通过 QIcon::name() 获取图标名称（如果可用）
+        QString iconName = icon.name();
+        if (!iconName.isEmpty()) {
+            actualIconPath = QString("Icon name from QIcon: %1").arg(iconName);
+        }
+    }
+
+    // 手动查找图标文件
+    QStringList foundIconPaths;
+    QStringList searchPaths = QIcon::themeSearchPaths();
+
+    // 获取主题继承链（包括当前主题和继承的主题）
+    QStringList themeNames;
+    themeNames << currentIconTheme;
+
+    // 读取主题继承关系
+    for (const QString &basePath : searchPaths) {
+        if (basePath.startsWith(":/")) continue;
+        QString indexFile = basePath + "/" + currentIconTheme + "/index.theme";
+        if (QFileInfo::exists(indexFile)) {
+            QFile file(indexFile);
+            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QTextStream in(&file);
+                while (!in.atEnd()) {
+                    QString line = in.readLine().trimmed();
+                    if (line.startsWith("Inherits=")) {
+                        QString inherits = line.mid(9); // 去掉 "Inherits="
+                        QStringList inheritList = inherits.split(',', Qt::SkipEmptyParts);
+                        for (QString &theme : inheritList) {
+                            theme = theme.trimmed();
+                            if (!themeNames.contains(theme)) {
+                                themeNames << theme;
+                            }
+                        }
+                        break;
+                    }
+                }
+                file.close();
+            }
+            break;
+        }
+    }
+
+    // 在所有主题中查找图标文件
+    for (const QString &themeName : themeNames) {
+        for (const QString &basePath : searchPaths) {
+            if (basePath.startsWith(":/") || !QDir(basePath).exists()) {
+                continue;
+            }
+
+            QString themePath = basePath + "/" + themeName;
+            if (QDir(themePath).exists()) {
+                QDirIterator it(themePath, QStringList() << (iconString + ".*"),
+                              QDir::Files, QDirIterator::Subdirectories);
+                while (it.hasNext()) {
+                    QString path = it.next();
+                    if (!foundIconPaths.contains(path)) {
+                        foundIconPaths.append(path);
+                    }
+                }
+            }
+        }
+    }
+
+    qWarning() << "[SOUND_ICON_DEBUG] ========================================";
+    qWarning() << "[SOUND_ICON_DEBUG] Volume:" << volume << "MaxVolume:" << maxVolume;
+    qWarning() << "[SOUND_ICON_DEBUG] Ratio:" << (volume / maxVolume) << "Mute:" << mute;
+    qWarning() << "[SOUND_ICON_DEBUG] Icon name:" << iconString;
+    qWarning() << "[SOUND_ICON_DEBUG] Theme type:" << themeTypeName;
+    qWarning() << "[SOUND_ICON_DEBUG] Icon theme:" << currentIconTheme;
+    qWarning() << "[SOUND_ICON_DEBUG] Device pixel ratio:" << devicePixelRatio;
+    qWarning() << "[SOUND_ICON_DEBUG] QIcon info:" << actualIconPath;
+    qWarning() << "[SOUND_ICON_DEBUG] Icon search paths:" << searchPaths.join(", ");
+
+    if (foundIconPaths.isEmpty()) {
+        qWarning() << "[SOUND_ICON_DEBUG] WARNING: No icon files found for" << iconString;
+    } else {
+        qWarning() << "[SOUND_ICON_DEBUG] Found" << foundIconPaths.size() << "icon file(s):";
+        for (const QString &path : foundIconPaths) {
+            qWarning() << "[SOUND_ICON_DEBUG]   -" << path;
+        }
+    }
+    qWarning() << "[SOUND_ICON_DEBUG] ========================================";
+
+    m_iconWidget->setIcon(icon);
 }
 
 void SoundView::refreshTips(const bool force)
