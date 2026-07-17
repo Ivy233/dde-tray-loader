@@ -13,12 +13,46 @@
 #include <QVBoxLayout>
 #include <QMouseEvent>
 #include <DFontSizeManager>
+#include <QRegularExpression>
 
 #define PLUGIN_STATE_KEY    "enable"
 #define DEFAULT_WEEK_FORMAT "dddd"
 #define SIMPLE_WEEK_FORMAT "ddd"
 
 DWIDGET_USE_NAMESPACE
+
+namespace {
+// 两个正则都用 static 局部对象，避免每次调用重新编译。
+// 1) 半角/全角括号、方括号整体包裹的时区: (tttt)、（tttt）、[tttt]
+// 2) 裸时区 token，连同前导分隔符(空格/逗号/分号，但不含句点)一并删除
+//    分隔符不含句点，避免误吞 bg_BG "'ч'." 这类以缩写句点结尾的字面量；
+//    引号字面量本身不匹配，fr_CA 的 'h'/'min'/'s' 与 bg_BG 的 'ch'.
+//    都交由 Qt 的 toString 自行渲染，保证它们不会被剥离。
+const QRegularExpression &tzTokenRegex()
+{
+    static const QRegularExpression re(
+        "(?:\\([tT]+\\)|（[tT]+）|\\[[tT]+\\])"
+        "|[\\s,，;；]*[tT]+"
+    );
+    return re;
+}
+
+const QRegularExpression &trailingSepRegex()
+{
+    static const QRegularExpression re("[\\s,，;；]+\\s*$");
+    return re;
+}
+
+// 从 Qt 时间格式串中剥离时区 token，保留 locale 特定的文本分隔符与引号字面量。
+// 与控制中心 shared-utils/DCCLocale::stripTimezoneFromTimeFormat 保持一致。
+QString stripTimezoneFromTimeFormat(const QString &timeFormat)
+{
+    QString s = timeFormat;
+    s.remove(tzTokenRegex());
+    s.remove(trailingSepRegex());
+    return s;
+}
+}
 
 DatetimeWidget::DatetimeWidget(RegionFormat* regionFormat, QWidget *parent)
     : QWidget(parent)
@@ -33,8 +67,19 @@ DatetimeWidget::DatetimeWidget(RegionFormat* regionFormat, QWidget *parent)
     , m_dockSize(QSize(1920, 37))
     , m_timedateInter(new Timedate1Inter("org.deepin.dde.Timedate1", "/org/deepin/dde/Timedate1", QDBusConnection::sessionBus(), this))
     , m_regionFormat(regionFormat)
+    , m_dconfig(Dtk::Core::DConfig::create("org.deepin.dde.tray-loader", "org.deepin.dde.dock.plugin.datetime", "", this))
 {
     initUI();
+
+    if (m_dconfig && m_dconfig->isValid()) {
+        m_showSeconds = m_dconfig->value("showSeconds", false).toBool();
+        connect(m_dconfig, &Dtk::Core::DConfig::valueChanged, this, [this](const QString &key) {
+            if (key == "showSeconds") {
+                m_showSeconds = m_dconfig->value("showSeconds", false).toBool();
+                updateDateTime();
+            }
+        });
+    }
 
     setWeekdayFormat(m_timedateInter->weekdayFormat());
     connect(m_timedateInter, &Timedate1Inter::WeekdayFormatChanged, this, &DatetimeWidget::setWeekdayFormat);
@@ -92,6 +137,15 @@ void DatetimeWidget::updateWeekdayFormat()
     }
 }
 
+QString DatetimeWidget::effectiveTimeFormat() const
+{
+    if (!m_showSeconds)
+        return m_regionFormat->getShortTimeFormat();
+
+    // 显示秒时采用长时间格式，并剥离时区 token，与控制中心"时间和日期"页顶部时间显示一致
+    return stripTimezoneFromTimeFormat(m_regionFormat->getLongTimeFormat());
+}
+
 void DatetimeWidget::setRegionFormat(RegionFormat *newRegionFormat)
 {
     m_regionFormat = newRegionFormat;
@@ -113,7 +167,7 @@ void DatetimeWidget::updateDateTimeString()
     const auto position = qApp->property(PROP_POSITION).value<Dock::Position>();
     QString timeStr, dateString;
     if (position == Dock::Bottom || position == Dock::Top) {
-        QString timeFormat = m_regionFormat->getShortTimeFormat();
+        QString timeFormat = effectiveTimeFormat();
         timeStr = locale.toString(current, timeFormat);
         dateString = locale.toString(current.date(), m_regionFormat->getShortDateFormat());
 
@@ -124,12 +178,12 @@ void DatetimeWidget::updateDateTimeString()
             QString apText = locale.toString(current, "AP");
             m_apLabel->setText(apText);
 
-            QString timeFormat = m_regionFormat->getShortTimeFormat();
+            QString timeFormat = effectiveTimeFormat();
             timeFormat.replace("AP", "");
             timeFormat.replace(" ", "");
             timeStr = locale.toString(current.time(), timeFormat);
         } else {
-            timeStr = locale.toString(current.time(), m_regionFormat->getShortTimeFormat());
+            timeStr = locale.toString(current.time(), effectiveTimeFormat());
         }
 
         m_timeLabel->setText(timeStr);

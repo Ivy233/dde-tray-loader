@@ -7,6 +7,8 @@
 
 #include <QWidget>
 
+#include <DConfig>
+
 #include "timedate1interface.h"
 
 using Timedate1Inter = org::deepin::dde::Timedate1;
@@ -47,6 +49,7 @@ private:
     void adjustFontSize();
     void updateDateTime();
     void updateWeekdayFormat();
+    QString effectiveTimeFormat() const;
 
 private:
     QLabel *m_timeLabel;
@@ -64,6 +67,9 @@ private:
 
     Timedate1Inter *m_timedateInter;
     RegionFormat *m_regionFormat;
+
+    Dtk::Core::DConfig *m_dconfig = nullptr;
+    bool m_showSeconds = false;
 };
 
 #endif // DATETIMEWIDGET_H

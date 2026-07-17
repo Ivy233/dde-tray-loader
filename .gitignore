@@ -10,3 +10,4 @@ plugins/dde-dock/translations/
 plugins/dde-network-core/translations/
 obj-x86_64-linux-gnu/
 *.autosave
+debian/*
