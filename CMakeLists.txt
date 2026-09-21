@@ -15,6 +15,8 @@ project(dde-tray-loader
     LANGUAGES CXX C
 )
 
+option(DTL_BUILD_TESTS "Build dde-tray-loader tests" OFF)
+
 if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX /usr)
 endif ()
@@ -45,6 +47,11 @@ pkg_get_variable(WAYLAND_PROTOCOLS_DATADIR wayland-protocols pkgdatadir)
 
 add_subdirectory(plugins)
 add_subdirectory(src)
+
+if (DTL_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 configure_file(dde-dock.pc.in dde-dock.pc @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/dde-dock.pc

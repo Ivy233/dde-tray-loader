@@ -5,6 +5,7 @@
 #include "datetimewidget.h"
 #include "constants.h"
 #include "regionFormat.h"
+#include "timeformat.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -52,8 +53,19 @@ DatetimeWidget::DatetimeWidget(RegionFormat* regionFormat, QWidget *parent)
     , m_dockSize(QSize(1920, 37))
     , m_timedateInter(new Timedate1Inter("org.deepin.dde.Timedate1", "/org/deepin/dde/Timedate1", QDBusConnection::sessionBus(), this))
     , m_regionFormat(regionFormat)
+    , m_dconfig(Dtk::Core::DConfig::create("org.deepin.dde.tray-loader", "org.deepin.dde.dock.plugin.datetime", "", this))
 {
     initUI();
+
+    if (m_dconfig && m_dconfig->isValid()) {
+        m_showSeconds = m_dconfig->value("showSeconds", false).toBool();
+        connect(m_dconfig, &Dtk::Core::DConfig::valueChanged, this, [this](const QString &key) {
+            if (key == "showSeconds") {
+                m_showSeconds = m_dconfig->value("showSeconds", false).toBool();
+                updateDateTime();
+            }
+        });
+    }
 
     setWeekdayFormat(m_timedateInter->weekdayFormat());
     connect(m_timedateInter, &Timedate1Inter::WeekdayFormatChanged, this, &DatetimeWidget::setWeekdayFormat);
@@ -111,6 +123,15 @@ void DatetimeWidget::updateWeekdayFormat()
     }
 }
 
+QString DatetimeWidget::effectiveTimeFormat() const
+{
+    if (!m_showSeconds)
+        return m_regionFormat->getShortTimeFormat();
+
+    return addSecondsToShortTimeFormat(m_regionFormat->getShortTimeFormat(),
+                                       m_regionFormat->getLongTimeFormat());
+}
+
 void DatetimeWidget::setRegionFormat(RegionFormat *newRegionFormat)
 {
     m_regionFormat = newRegionFormat;
@@ -148,7 +169,7 @@ void DatetimeWidget::updateDateTimeString()
     const auto position = qApp->property(PROP_POSITION).value<Dock::Position>();
     QString timeStr, dateString;
     if (position == Dock::Bottom || position == Dock::Top) {
-        QString timeFormat = m_regionFormat->getShortTimeFormat();
+        QString timeFormat = effectiveTimeFormat();
         timeStr = locale.toString(current, timeFormat);
         dateString = locale.toString(current.date(), m_regionFormat->getShortDateFormat());
 
@@ -159,12 +180,12 @@ void DatetimeWidget::updateDateTimeString()
             QString apText = locale.toString(current, "AP");
             m_apLabel->setText(apText);
 
-            QString timeFormat = m_regionFormat->getShortTimeFormat();
+            QString timeFormat = effectiveTimeFormat();
             timeFormat.replace("AP", "");
             timeFormat.replace(" ", "");
             timeStr = locale.toString(current.time(), timeFormat);
         } else {
-            timeStr = locale.toString(current.time(), m_regionFormat->getShortTimeFormat());
+            timeStr = locale.toString(current.time(), effectiveTimeFormat());
         }
 
         m_timeLabel->setText(timeStr);
