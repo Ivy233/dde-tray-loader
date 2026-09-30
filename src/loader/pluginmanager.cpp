@@ -26,7 +26,7 @@ bool PluginManager::loadPlugins()
         QFileInfo pathInfo(path);
 
         if (!pathInfo.exists()) {
-            qWarning() << "Path does not exist:" << path;
+            qDebug() << "Path does not exist:" << path;
             continue;
         }
 
@@ -102,7 +102,7 @@ void PluginManager::loadPluginsFromDir(const QString &dirPath)
 {
     QDir pluginDir(dirPath);
     if (!pluginDir.exists()) {
-        qWarning() << "Directory does not exist:" << dirPath;
+        qDebug() << "Directory does not exist:" << dirPath;
         return;
     }
 
